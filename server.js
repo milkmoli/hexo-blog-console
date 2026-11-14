@@ -265,6 +265,16 @@ async function startPreview() {
   return false;
 }
 
+function deployHint() {
+  const recent = logs.slice(-45).map((l) => l.text).join('\n');
+  if (/SSL certificate problem/i.test(recent)) return '：TLS 证书校验失败。执行 git config --global http.sslBackend schannel 后重试';
+  if (/RPC failed|Connection was reset|Send failure|hung up unexpectedly/i.test(recent)) return '：大文件推送被中途重置。建议把 deploy 的 repo 改成 SSH（git@github.com:...），或精简站点体积';
+  if (/Authentication failed|403 Forbidden|could not read Username|could not read Password/i.test(recent)) return '：GitHub 凭据失效。检查 git credential，或改用 SSH 部署';
+  if (/ssh:|Permission denied \(publickey\)/i.test(recent)) return '：SSH 认证失败。确认 ssh -T git@github.com 能通，且公钥已加到 GitHub';
+  if (!fs.existsSync(path.join(BLOG, 'node_modules', 'hexo-deployer-git'))) return '：没有安装 hexo-deployer-git，执行 npm i hexo-deployer-git';
+  return '，请查看下方日志定位原因';
+}
+
 async function doPublish() {
   publish = { running: true, phase: 'commit', startedAt: Date.now() };
   try {
@@ -276,7 +286,10 @@ async function doPublish() {
     if (await runHexo(['generate']) !== 0) throw new Error('generate 失败');
     if (!fs.existsSync(path.join(BLOG, 'public', 'index.html'))) throw new Error('构建产物缺失');
     publish.phase = 'deploy';
-    if (await runHexo(['deploy']) !== 0) throw new Error('deploy 失败（检查网络或 GitHub 凭据）');
+    if (!fs.existsSync(path.join(BLOG, '.deploy_git', '.git'))) {
+      push('warn', '警告：.deploy_git 不存在，本次会把整站全量上传（本站约 270MB），容易中途失败');
+    }
+    if (await runHexo(['deploy']) !== 0) throw new Error('deploy 失败' + deployHint());
     publish.phase = 'done';
     lastDeploy = new Date().toLocaleString('zh-CN');
     push('ok', '上线完成' + (config.siteUrl ? '：' + config.siteUrl : ''));

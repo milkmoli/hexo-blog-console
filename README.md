@@ -113,6 +113,28 @@ A: 看底部日志。最常见的是 GitHub 凭据失效（`git credential` 没�
 **Q: 预览报错找不到 marked？**
 A: 需要博客装过 `hexo-renderer-marked`（Hexo 默认就有）。没有时会退化成纯文本预览，不影响写作。
 
+**Q: 发布时报 `SSL certificate problem: unable to get local issuer certificate`？**
+A: 这是 git 的证书链问题，和网络无关。Windows 上执行一次：
+
+```bash
+git config --global http.sslBackend schannel
+```
+
+**Q: 发布时报 `RPC failed; curl 55 Send failure` 或 `Connection was reset`？**
+A: 站点体积太大，推送被中途重置。两个办法：
+1. 把 `_config.yml` 里 deploy 的 repo 换成 SSH（`git@github.com:user/user.github.io.git`），大流量通常更稳；
+2. 精简站点：Hexo 会把主题 `source/` 下的所有文件复制进 `public/`，几十 MB 的音频/视频会让每次部署都很痛苦，建议放到图床/CDN。
+
+**Q: 第一次部署特别慢，还容易失败？**
+A: 看 `.deploy_git` 是否还在。这个目录保存部署历史，一旦被删，下一次部署会把整站全量推一遍。让它重新接上远端历史即可恢复增量推送：
+
+```bash
+cd .deploy_git
+git remote add origin git@github.com:USER/USER.github.io.git
+git fetch --depth=1 origin gh-pages
+git reset --soft origin/gh-pages
+```
+
 **Q: 会不会把我的文章传到网上？**
 A: 不会。控制台只监听本机回环地址，除了你自己触发的 `hexo deploy` 之外不发起任何外部请求。
 
