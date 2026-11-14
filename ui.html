@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hexo Blog Console</title>
+<style>
+:root{
+  --bg:#0e1014; --panel:#151920; --panel2:#1b202a; --line:#262d3a;
+  --text:#e7eaf0; --muted:#8b93a7; --accent:#c0392b; --accent2:#3b82f6;
+  --ok:#3fb950; --warn:#d29922; --err:#f85149; --code:#0b0e13; --sel:#231a1c;
+}
+html[data-theme="light"]{
+  --bg:#f6f7f9; --panel:#ffffff; --panel2:#f0f2f5; --line:#dfe3ea;
+  --text:#1c2128; --muted:#6b7280; --code:#f3f4f6; --sel:#fdeceb; --accent:#a31f34;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;display:flex;flex-direction:column;overflow:hidden}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:7px 13px;transition:.15s}
+button:hover{border-color:var(--accent2)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{filter:brightness(1.1)}
+button.danger{color:var(--err)}
+.spacer{flex:1}
+header{display:flex;align-items:center;gap:12px;padding:0 16px;height:56px;background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:.3px}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+.status{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);font-size:12px;cursor:default}
+.pill.click{cursor:pointer}
+.pill .led{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.pill.busy .led{background:var(--warn);animation:pulse 1s infinite}
+.pill.err .led{background:var(--err)}
+@keyframes pulse{50%{opacity:.3}}
+main{display:flex;flex:1;min-height:0}
+aside{width:300px;flex:0 0 auto;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+.search{padding:12px 12px 6px}
+.search input{width:100%;padding:8px 11px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);outline:none}
+.search input:focus{border-color:var(--accent2)}
+.list{overflow:auto;padding:6px 8px 14px}
+.item{padding:9px 11px;border-radius:9px;cursor:pointer;border:1px solid transparent;margin-bottom:3px}
+.item:hover{background:var(--panel2)}
+.item.active{background:var(--sel);border-color:var(--accent)}
+.item .t{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .m{color:var(--muted);font-size:11.5px;display:flex;gap:8px;margin-top:2px}
+.editor{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+.bar{display:flex;align-items:center;gap:9px;padding:9px 14px;border-bottom:1px solid var(--line);background:var(--panel);flex:0 0 auto}
+.bar .file{font-weight:600;font-size:13px;color:var(--text)}
+.muted{color:var(--muted);font-size:12px}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;padding:14px;background:var(--panel2);border-bottom:1px solid var(--line)}
+.meta .full{grid-column:1 / -1}
+.meta label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px}
+.meta input{width:100%;padding:7px 10px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--text);outline:none;font:inherit}
+.meta input:focus{border-color:var(--accent2)}
+.panes{flex:1;display:flex;min-height:0}
+textarea{flex:1;border:0;outline:none;resize:none;padding:20px 24px;background:var(--bg);color:var(--text);font:14px/1.85 "Cascadia Code",Consolas,"Microsoft YaHei",monospace;tab-size:2}
+.preview{flex:1;overflow:auto;padding:20px 28px;border-left:1px solid var(--line);background:var(--panel)}
+.hidden{display:none !important}
+.markdown-body{max-width:760px}
+.markdown-body h1{font-size:1.7em;border-bottom:1px solid var(--line);padding-bottom:.3em}
+.markdown-body h2{font-size:1.35em;margin-top:1.6em}
+.markdown-body h3{font-size:1.12em}
+.markdown-body a{color:var(--accent2)}
+.markdown-body code{background:var(--code);padding:2px 6px;border-radius:5px;font-size:.9em;color:#ff8a7a}
+.markdown-body pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto}
+.markdown-body pre code{background:none;padding:0;color:var(--text)}
+.markdown-body blockquote{margin:0;padding:6px 16px;border-left:3px solid var(--accent);color:var(--muted)}
+.markdown-body table{border-collapse:collapse;width:100%;margin:1em 0}
+.markdown-body th,.markdown-body td{border:1px solid var(--line);padding:8px 12px;text-align:left}
+.markdown-body th{background:var(--panel2)}
+.markdown-body img{max-width:100%;border-radius:10px}
+footer{flex:0 0 auto;height:150px;border-top:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+.logbar-head{display:flex;align-items:center;gap:10px;padding:6px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
+.link{background:none;border:0;color:var(--muted);padding:0 4px;font-size:12px;text-decoration:underline}
+#log{flex:1;overflow:auto;padding:6px 14px;font:12px/1.7 "Cascadia Code",Consolas,monospace;color:var(--muted)}
+#log .l{white-space:pre-wrap;word-break:break-all}
+#log .err{color:var(--err)}
+#log .ok{color:var(--ok)}
+#log .cmd{color:var(--accent2)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50}
+.card{width:540px;max-height:88vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:0 24px 60px rgba(0,0,0,.45)}
+.card h3{margin:0 0 16px;font-size:16px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+.field input{width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);outline:none;font:inherit}
+.field input:focus{border-color:var(--accent2)}
+.row{display:flex;gap:10px}
+.row .field{flex:1}
+.check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:10px}
+.card .actions{display:flex;justify-content:flex-end;gap:9px;margin-top:16px}
+#toast{position:fixed;left:50%;bottom:170px;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:10px 18px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.45);font-size:13px;z-index:80}
+#toast.ok{border-color:var(--ok);color:var(--ok)}
+#toast.err{border-color:var(--err);color:var(--err)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span>博客控制台</div>
+  <div class="status">
+    <span class="pill" id="pill"><span class="led"></span><span id="pillText">就绪</span></span>
+    <span class="pill click" id="gitPill" title="点击提交全部改动"><span class="led"></span><span id="gitText">git</span></span>
+  </div>
+  <span class="spacer"></span>
+  <button id="btnNew">＋ 新建文章</button>
+  <button id="btnPreview">▶ 本地预览</button>
+  <button id="btnPublish" class="primary">🚀 发布上线</button>
+  <button id="btnSite" class="hidden">↗ 网站</button>
+  <button id="btnTheme" title="切换主题">◐</button>
+</header>
+<main>
+  <aside>
+    <div class="search"><input id="search" placeholder="搜索标题 / 标签…"></div>
+    <div class="list" id="posts"></div>
+  </aside>
+  <section class="editor">
+    <div class="bar">
+      <span class="file" id="current">未选择文章</span>
+      <span class="muted" id="metaInfo"></span>
+      <span class="spacer"></span>
+      <span class="muted" id="autosave"></span>
+      <span class="muted" id="counter"></span>
+      <button id="btnMeta">元信息</button>
+      <button id="btnSave">保存</button>
+      <button id="btnDelete" class="danger">删除</button>
+    </div>
+    <div class="meta hidden" id="metaPanel">
+      <div class="field"><label>标题</label><input id="mTitle"></div>
+      <div class="field"><label>日期</label><input id="mDate"></div>
+      <div class="field"><label>标签（逗号分隔）</label><input id="mTags"></div>
+      <div class="field"><label>分类</label><input id="mCats"></div>
+      <div class="field full"><label>描述</label><input id="mDesc"></div>
+      <div class="field full"><label>封面 URL</label><input id="mCover"></div>
+    </div>
+    <div class="panes">
+      <textarea id="content" spellcheck="false" placeholder="从左栏选择一篇文章，或点右上角「新建文章」"></textarea>
+      <div class="preview hidden" id="previewPane"><div class="markdown-body" id="previewBody"></div></div>
+    </div>
+  </section>
+</main>
+<footer>
+  <div class="logbar-head"><span>运行日志</span><span class="spacer"></span><button class="link" id="btnClearLog">清空</button></div>
+  <div id="log"></div>
+</footer>
+
+<div class="modal hidden" id="modal">
+  <div class="card">
+    <h3>新建文章</h3>
+    <div class="field"><label>标题</label><input id="fTitle" placeholder="例如：AI 接管了我的网站"></div>
+    <div class="row">
+      <div class="field"><label>文件名（决定网址）</label><input id="fSlug" placeholder="留空则用标题"></div>
+      <div class="field"><label>日期</label><input id="fDate"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>标签（逗号分隔）</label><input id="fTags" placeholder="Hexo, 教程"></div>
+      <div class="field"><label>分类</label><input id="fCats" placeholder="教程"></div>
+    </div>
+    <div class="field"><label>描述</label><input id="fDesc"></div>
+    <div class="field"><label>封面 URL</label><input id="fCover"></div>
+    <label class="check"><input type="checkbox" id="fDraft"> 存为草稿（文件名加 _ 前缀，Hexo 不生成页面）</label>
+    <div class="actions">
+      <button id="btnCancelNew">取消</button>
+      <button class="primary" id="btnCreate">创建并开始写</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+<script>
+var state = { file: null, dirty: false, posts: [], lastSeq: 0, previewing: false, publishing: false, config: {}, autoTimer: null };
+var $ = function (id) { return document.getElementById(id); };
+var esc = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+
+function api(path, opts) {
+  return fetch(path, opts).then(function (r) {
+    return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; });
+  });
+}
+function postJSON(path, body) {
+  return api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+function toast(msg, kind) {
+  var t = $('toast');
+  t.textContent = msg;
+  t.className = kind || '';
+  clearTimeout(window._toast);
+  window._toast = setTimeout(function () { t.className = 'hidden'; }, 2600);
+}
+function fmtDate(d) { return d ? String(d).replace(/:00$/, '') : ''; }
+
+function renderPosts() {
+  var q = $('search').value.trim().toLowerCase();
+  var box = $('posts');
+  box.innerHTML = '';
+  state.posts.filter(function (p) {
+    return !q || (p.title + ' ' + p.tags + ' ' + p.categories).toLowerCase().indexOf(q) >= 0;
+  }).forEach(function (p) {
+    var el = document.createElement('div');
+    el.className = 'item' + (p.file === state.file ? ' active' : '');
+    var t = document.createElement('div');
+    t.className = 't';
+    t.textContent = (p.draft ? '【草稿】' : '') + p.title;
+    var m = document.createElement('div');
+    m.className = 'm';
+    m.innerHTML = '<span>' + esc(fmtDate(p.date)) + '</span><span>' + p.chars + ' 字</span>';
+    if (p.tags) m.innerHTML += '<span>' + esc(p.tags.split(',')[0]) + '</span>';
+    el.appendChild(t); el.appendChild(m);
+    el.onclick = function () { openPost(p.file); };
+    box.appendChild(el);
+  });
+}
+
+function fillMeta(meta) {
+  $('mTitle').value = meta.title || '';
+  $('mDate').value = meta.date || '';
+  $('mTags').value = meta.tags || '';
+  $('mCats').value = meta.categories || '';
+  $('mDesc').value = meta.description || '';
+  $('mCover').value = meta.cover || '';
+}
+
+function openPost(file) {
+  if (state.dirty && !confirm('当前文章有未提交的修改，确定切换吗？')) return;
+  api('/api/post?file=' + encodeURIComponent(file)).then(function (j) {
+    state.file = j.file;
+    state.dirty = false;
+    $('content').value = j.content;
+    $('current').textContent = j.file;
+    fillMeta(j.meta);
+    $('metaInfo').textContent = (j.meta.date || '') + (j.meta.categories ? ' · ' + j.meta.categories : '');
+    renderPosts();
+    updateCounter();
+    if (!$('previewPane').classList.contains('hidden')) renderPreview();
+  }).catch(function (e) { toast('打开失败：' + e.message, 'err'); });
+}
+
+function updateCounter() {
+  $('counter').textContent = $('content').value.replace(/\s/g, '').length + ' 字';
+}
+
+function save(opts) {
+  opts = opts || {};
+  if (!state.file) { toast('先选择或新建文章', 'err'); return Promise.resolve(); }
+  return postJSON('/api/save', { file: state.file, content: $('content').value, commit: opts.commit !== false })
+    .then(function (j) {
+      state.dirty = false;
+      if (opts.commit === false) { $('autosave').textContent = '已自动保存 ' + new Date().toLocaleTimeString('zh-CN'); return j; }
+      var c = j.git;
+      if (c && c.hash) toast('已保存并提交 ' + c.hash, 'ok');
+      else if (c && c.reason === 'no-repo') toast('已保存（源码未纳入 git）', 'ok');
+      else toast('已保存', 'ok');
+      loadPosts();
+      return j;
+    })
+    .catch(function (e) { toast('保存失败：' + e.message, 'err'); });
+}
+
+function loadPosts() {
+  return api('/api/posts').then(function (j) { state.posts = j.posts; renderPosts(); });
+}
+
+function renderPreview() {
+  postJSON('/api/render', { text: $('content').value }).then(function (j) { $('previewBody').innerHTML = j.html; });
+}
+
+function publish() {
+  if (state.publishing) return;
+  if (!confirm('即将构建并推送到 GitHub Pages，大约 1-3 分钟。继续？')) return;
+  var go = state.dirty ? save() : Promise.resolve();
+  go.then(function () {
+    state.publishing = true;
+    $('btnPublish').disabled = true;
+    setPill('busy', '准备发布…');
+    postJSON('/api/publish', {}).catch(function (e) { state.publishing = false; $('btnPublish').disabled = false; toast(e.message, 'err'); });
+  });
+}
+
+var phases = { commit: '提交源码', clean: '清理产物', generate: '构建站点', deploy: '推送到 GitHub', done: '完成' };
+function setPill(kind, text) { $('pill').className = 'pill ' + kind; $('pillText').textContent = text; }
+
+function appendLog(line) {
+  var box = $('log');
+  var el = document.createElement('div');
+  el.className = 'l ' + (line.level || '');
+  el.textContent = line.text;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+}
+
+function poll() {
+  api('/api/state').then(function (s) {
+    if (s.publish && s.publish.running) setPill('busy', phases[s.publish.phase] || '处理中…');
+    else {
+      if (state.publishing) { state.publishing = false; $('btnPublish').disabled = false; loadPosts(); }
+      setPill('', s.lastDeploy ? '上次发布 ' + s.lastDeploy : '就绪');
+    }
+    state.previewing = s.preview;
+    $('btnPreview').textContent = s.preview ? '■ 停止预览' : '▶ 本地预览';
+    if (s.git) {
+      var g = $('gitPill');
+      if (!s.git.ready) { $('gitText').textContent = '源码未纳入 git'; g.className = 'pill click err'; }
+      else if (s.git.dirty) { $('gitText').textContent = '未提交 ' + s.git.files + ' 项'; g.className = 'pill click busy'; }
+      else { $('gitText').textContent = '已同步 ' + String(s.git.last || '').slice(0, 7); g.className = 'pill click'; }
+      g.title = s.git.last || '';
+    }
+  }).catch(function () {});
+  api('/api/log?since=' + state.lastSeq).then(function (j) {
+    j.lines.forEach(appendLog);
+    state.lastSeq = j.seq;
+  }).catch(function () {});
+}
+
+$('btnSave').onclick = function () { save(); };
+$('btnPublish').onclick = publish;
+$('btnSite').onclick = function () { window.open(state.config.siteUrl, '_blank'); };
+$('btnClearLog').onclick = function () { $('log').innerHTML = ''; };
+$('search').oninput = renderPosts;
+$('btnMeta').onclick = function () { $('metaPanel').classList.toggle('hidden'); };
+
+$('gitPill').onclick = function () {
+  postJSON('/api/git-init', {}).then(function (j) {
+    if (j.hash) toast('已提交 ' + j.hash, 'ok');
+    else if (j.reason === 'clean') toast('没有需要提交的改动', 'ok');
+    else toast('提交失败：' + (j.reason || '未知'), 'err');
+    poll();
+  }).catch(function (e) { toast('失败：' + e.message, 'err'); });
+};
+
+$('content').oninput = function () {
+  state.dirty = true;
+  updateCounter();
+  if (!$('previewPane').classList.contains('hidden')) {
+    clearTimeout(window._rt);
+    window._rt = setTimeout(renderPreview, 350);
+  }
+  $('autosave').textContent = '未保存…';
+  clearTimeout(state.autoTimer);
+  state.autoTimer = setTimeout(function () { if (state.dirty) save({ commit: false }); }, state.config.autoSaveMs || 4000);
+};
+
+$('btnDelete').onclick = function () {
+  if (!state.file) return;
+  if (!confirm('把《' + state.file + '》移入 _trash 回收站？\n（会同时提交一次 git，可从回收站恢复）')) return;
+  postJSON('/api/delete', { file: state.file }).then(function () {
+    toast('已移入 _trash', 'ok');
+    state.file = null; state.dirty = false;
+    $('content').value = ''; $('current').textContent = '未选择文章';
+    loadPosts();
+  }).catch(function (e) { toast('删除失败：' + e.message, 'err'); });
+};
+
+$('metaPanel').addEventListener('change', function () {
+  if (!state.file) return;
+  postJSON('/api/meta', {
+    file: state.file,
+    fields: { title: $('mTitle').value, date: $('mDate').value, tags: $('mTags').value, categories: $('mCats').value, description: $('mDesc').value, cover: $('mCover').value }
+  }).then(function (j) {
+    $('content').value = j.content;
+    $('metaInfo').textContent = ($('mDate').value || '') + ' · ' + ($('mCats').value || '');
+    toast('元信息已更新' + (j.git && j.git.hash ? ' ' + j.git.hash : ''), 'ok');
+    loadPosts();
+  }).catch(function (e) { toast('更新失败：' + e.message, 'err'); });
+});
+
+$('btnPreview').onclick = function () {
+  if (state.previewing) { postJSON('/api/stop-preview', {}).then(function () { toast('已停止本地预览'); poll(); }); }
+  else {
+    toast('正在启动本地预览…');
+    postJSON('/api/preview', {}).then(function (j) { if (!j.ok) toast('预览启动失败，查看日志', 'err'); poll(); })
+      .catch(function () { toast('预览启动失败', 'err'); });
+  }
+};
+
+$('btnNew').onclick = function () {
+  var now = new Date();
+  var p = function (n) { return (n < 10 ? '0' : '') + n; };
+  $('fDate').value = now.getFullYear() + '-' + p(now.getMonth() + 1) + '-' + p(now.getDate()) + ' ' + p(now.getHours()) + ':' + p(now.getMinutes()) + ':00';
+  $('fTitle').value = ''; $('fSlug').value = ''; $('fTags').value = ''; $('fCats').value = ''; $('fDesc').value = '';
+  $('fCover').value = state.config.defaultCover || '';
+  $('fDraft').checked = false;
+  $('modal').classList.remove('hidden');
+  setTimeout(function () { $('fTitle').focus(); }, 30);
+};
+$('btnCancelNew').onclick = function () { $('modal').classList.add('hidden'); };
+$('btnCreate').onclick = function () {
+  var title = $('fTitle').value.trim();
+  if (!title) return toast('标题不能为空', 'err');
+  postJSON('/api/new', {
+    title: title, slug: $('fSlug').value.trim(), date: $('fDate').value, tags: $('fTags').value,
+    categories: $('fCats').value, description: $('fDesc').value, cover: $('fCover').value, draft: $('fDraft').checked
+  }).then(function (j) {
+    $('modal').classList.add('hidden');
+    loadPosts().then(function () { openPost(j.file); });
+    toast('已创建 ' + j.file, 'ok');
+  }).catch(function (e) { toast('创建失败：' + e.message, 'err'); });
+};
+
+$('btnTheme').onclick = function () {
+  var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('blogConsoleTheme', next); } catch (e) {}
+};
+
+document.addEventListener('keydown', function (e) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); $('btnNew').click(); }
+  if (e.key === 'Escape') $('modal').classList.add('hidden');
+});
+window.addEventListener('beforeunload', function (e) { if (state.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+try { var t = localStorage.getItem('blogConsoleTheme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+
+api('/api/config').then(function (c) {
+  state.config = c;
+  document.title = '博客控制台 · ' + (c.siteUrl || c.blogDir || '');
+  if (c.siteUrl) $('btnSite').classList.remove('hidden');
+  loadPosts().then(function () { if (state.posts[0]) openPost(state.posts[0].file); });
+});
+setInterval(poll, 1200);
+poll();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "blogDir": "D:/path/to/your-hexo-blog",
+  "port": 4180,
+  "siteUrl": "https://username.github.io/",
+  "defaultCover": "",
+  "postsDir": "source/_posts",
+  "hexoBin": "node_modules/hexo-cli/bin/hexo",
+  "previewPort": 4000,
+  "autoSaveMs": 4000
+}
