@@ -93,6 +93,15 @@ function commitPaths(message, paths) {
   if (!c.ok) { push('err', 'git 提交失败：' + c.err); return { ok: false, reason: c.err }; }
   const hash = git(['rev-parse', '--short', 'HEAD']).out;
   push('ok', 'git ' + hash + ' · ' + message);
+  if (git(['remote']).out) {
+    const ps = spawn('git', ['push'], { cwd: BLOG, windowsHide: true });
+    ps.stdout.on('data', (d) => push('out', d));
+    ps.stderr.on('data', (d) => push('out', d));
+    ps.on('close', (code) => {
+      if (code === 0) push('ok', '已推送到远端仓库');
+      else push('err', '推送失败（下次提交会重试）：检查网络或凭据');
+    });
+  }
   return { ok: true, reason: 'committed', hash: hash };
 }
 
