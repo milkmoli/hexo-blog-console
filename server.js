@@ -348,7 +348,55 @@ async function uploadImage(name, base64) {
   if (!res.ok) throw new Error('GitHub 上传失败：' + res.status + ' ' + (await res.text()).slice(0, 160));
   const cdn = (config.imageCdn || '').replace('{repo}', config.imageRepo).replace('{branch}', config.imageBranch || 'main').replace('{path}', rel);
   push('ok', '已上传 ' + rel);
+  imageCache.at = 0;
   return { url: cdn, path: rel };
+}
+
+function cdnUrl(rel) {
+  return (config.imageCdn || '').replace('{repo}', config.imageRepo).replace('{branch}', config.imageBranch || 'main').replace('{path}', rel);
+}
+
+var imageCache = { at: 0, items: [] };
+
+async function listImages(force) {
+  if (!force && Date.now() - imageCache.at < 120000) return imageCache.items;
+  const token = githubToken();
+  if (!token) throw new Error('没有可用的 GitHub token');
+  const branch = config.imageBranch || 'main';
+  const res = await fetch('https://api.github.com/repos/' + config.imageRepo + '/git/trees/' + branch + '?recursive=1', {
+    headers: { Authorization: 'Bearer ' + token, 'User-Agent': 'hexo-blog-console', Accept: 'application/vnd.github+json' }
+  });
+  if (!res.ok) throw new Error('读取图床失败：' + res.status);
+  const data = await res.json();
+  const items = (data.tree || [])
+    .filter(function (n) {
+      return n.type === 'blob' && /\.(png|jpe?g|gif|webp|svg)$/i.test(n.path);
+    })
+    .map(function (n) {
+      return { path: n.path, size: n.size || 0, url: cdnUrl(n.path), name: n.path.split('/').pop() };
+    })
+    .sort(function (a, b) { return a.path < b.path ? 1 : -1; });
+  imageCache = { at: Date.now(), items: items };
+  return items;
+}
+
+async function deleteImage(rel) {
+  const token = githubToken();
+  if (!token) throw new Error('没有可用的 GitHub token');
+  const api = 'https://api.github.com/repos/' + config.imageRepo + '/contents/' + rel;
+  const info = await fetch(api + '?ref=' + (config.imageBranch || 'main'), {
+    headers: { Authorization: 'Bearer ' + token, 'User-Agent': 'hexo-blog-console', Accept: 'application/vnd.github+json' }
+  });
+  if (!info.ok) throw new Error('找不到图片：' + info.status);
+  const meta = await info.json();
+  const del = await fetch(api, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + token, 'User-Agent': 'hexo-blog-console', Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'delete: ' + rel, sha: meta.sha, branch: config.imageBranch || 'main' })
+  });
+  if (!del.ok) throw new Error('删除失败：' + del.status);
+  imageCache.at = 0;
+  return true;
 }
 
 const routes = {
@@ -442,6 +490,24 @@ const routes = {
     commitPaths('post: 删除《' + p.name + '》（已移入 _trash）', [config.postsDir]);
     push('ok', '已移入 _trash：' + p.name);
     send(res, 200, { ok: true, state: gitState() });
+  },
+  'GET /api/images': async (req, res, url) => {
+    try {
+      const items = await listImages(url.searchParams.get('refresh') === '1');
+      send(res, 200, { items: items, total: items.length, repo: config.imageRepo, dir: '' });
+    } catch (e) {
+      send(res, 500, { error: e.message });
+    }
+  },
+  'POST /api/images/delete': async (req, res) => {
+    const input = await readBody(req);
+    if (!input.path) return send(res, 400, { error: '缺少图片路径' });
+    try {
+      await deleteImage(String(input.path));
+      send(res, 200, { ok: true });
+    } catch (e) {
+      send(res, 500, { error: e.message });
+    }
   },
   'POST /api/upload': async (req, res) => {
     const input = await readBody(req);
