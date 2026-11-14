@@ -24,6 +24,7 @@
 - **git 自动提交 + 自动推送**：保存 / 发布时自动 `git add` + `commit`，配置了远端则异步 `push`；右上角状态灯显示是否同步
 - **本地预览**：一键起 `hexo server` 并打开浏览器，再点一次停止
 - **一键发布**：`clean → generate → deploy`，底部实时滚动日志，任一步失败立即中断
+- **图片上传**：一键把封面或正文配图传到 GitHub 图床仓库，自动生成 jsDelivr 链接并插入 Markdown
 - **深色 / 浅色主题**：跟随按钮切换，记忆在 localStorage
 
 ## 环境要求
@@ -72,6 +73,11 @@ cp config.example.json config.json
 | `hexoBin` | `node_modules/hexo-cli/bin/hexo` | hexo 入口，相对博客根目录 |
 | `previewPort` | `4000` | `hexo server` 的端口 |
 | `autoSaveMs` | `4000` | 自动保存的空闲间隔 |
+| `imageRepo` | `''` | 图床仓库，形如 `user/image-repo` |
+| `imageBranch` | `main` | 图床仓库分支 |
+| `imageDir` | `blog` | 图片存放的子目录（会自动按 年/月 分级） |
+| `imageCdn` | jsDelivr 模板 | CDN 地址模板，支持 `{repo}` `{branch}` `{path}` |
+| `githubToken` | `''` | GitHub Token（不填则读 `~/.git-credentials` 或环境变量 `GITHUB_TOKEN`）|
 
 ## 快捷键
 
@@ -134,6 +140,12 @@ git remote add origin git@github.com:USER/USER.github.io.git
 git fetch --depth=1 origin gh-pages
 git reset --soft origin/gh-pages
 ```
+
+**Q: 上传图片失败怎么办？**
+A: 依次检查：1) `imageRepo` 是否填了 `用户名/仓库名`；2) Token 是否有该仓库的写权限（classic token 需要 `repo` 作用域）；3) 控制台日志里的错误原文（会带 GitHub 返回码）。没有配置 Token 时会尝试读 `~/.git-credentials`。
+
+**Q: 图片会存到哪里？**
+A: 按 `imageDir/年/月/文件名-时间戳.扩展名` 存进图床仓库，返回 jsDelivr 链接。同名文件不会互相覆盖。
 
 **Q: 会不会把我的文章传到网上？**
 A: 不会。控制台只监听本机回环地址，除了你自己触发的 `hexo deploy` 之外不发起任何外部请求。

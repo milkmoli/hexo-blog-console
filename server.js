@@ -8,6 +8,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
+const os = require('os');
 
 const ROOT = __dirname;
 const CONFIG_PATH = path.join(ROOT, 'config.json');
@@ -21,7 +22,12 @@ function loadConfig() {
     postsDir: 'source/_posts',
     hexoBin: 'node_modules/hexo-cli/bin/hexo',
     previewPort: 4000,
-    autoSaveMs: 4000
+    autoSaveMs: 4000,
+    imageRepo: 'milkmoli/milkmoliimg',
+    imageBranch: 'main',
+    imageDir: 'blog',
+    imageCdn: 'https://cdn.jsdelivr.net/gh/{repo}@{branch}/{path}',
+    githubToken: ''
   };
   let user = {};
   if (fs.existsSync(CONFIG_PATH)) {
@@ -290,6 +296,12 @@ async function doPublish() {
       push('warn', '警告：.deploy_git 不存在，本次会把整站全量上传（本站约 270MB），容易中途失败');
     }
     if (await runHexo(['deploy']) !== 0) throw new Error('deploy 失败' + deployHint());
+    // 部署器会吞掉 git commit 的失败（比如没配 user.email），这里兜底检查
+    const ct = git(['-C', path.join(BLOG, '.deploy_git'), 'log', '-1', '--format=%ct']).out;
+    const ageSec = ct ? Date.now() / 1000 - Number(ct) : 0;
+    if (ct && ageSec > 600) {
+      push('warn', '警告：部署仓库没有产生新提交，线上可能还是旧版本。检查 .deploy_git 的 user.name / user.email');
+    }
     publish.phase = 'done';
     lastDeploy = new Date().toLocaleString('zh-CN');
     push('ok', '上线完成' + (config.siteUrl ? '：' + config.siteUrl : ''));
@@ -300,6 +312,43 @@ async function doPublish() {
     publish.running = false;
     setTimeout(() => { publish.phase = 'idle'; }, 6000);
   }
+}
+
+function githubToken() {
+  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
+  if (config.githubToken) return config.githubToken;
+  try {
+    const raw = fs.readFileSync(path.join(os.homedir(), '.git-credentials'), 'utf8');
+    const m = raw.match(/https:\/\/([^:\n]+):([^@\n]+)@github\.com/);
+    if (m) return m[2];
+  } catch (e) {}
+  return '';
+}
+
+async function uploadImage(name, base64) {
+  const token = githubToken();
+  if (!token) throw new Error('没有可用的 GitHub token（配置 githubToken 或登录过 git）');
+  const ext = (path.extname(name) || '.png').toLowerCase().replace('.', '');
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].indexOf(ext) < 0) throw new Error('不支持的图片格式：' + ext);
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const base = path.basename(name, path.extname(name)).replace(/[^\w\u4e00-\u9fa5-]+/g, '-').slice(0, 40) || 'image';
+  const file = base + '-' + Date.now().toString(36) + '.' + ext;
+  const rel = [config.imageDir || 'blog', String(now.getFullYear()), month, file].filter(Boolean).join('/');
+  const res = await fetch('https://api.github.com/repos/' + config.imageRepo + '/contents/' + rel, {
+    method: 'PUT',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'User-Agent': 'hexo-blog-console',
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ message: 'upload: ' + rel, content: base64, branch: config.imageBranch || 'main' })
+  });
+  if (!res.ok) throw new Error('GitHub 上传失败：' + res.status + ' ' + (await res.text()).slice(0, 160));
+  const cdn = (config.imageCdn || '').replace('{repo}', config.imageRepo).replace('{branch}', config.imageBranch || 'main').replace('{path}', rel);
+  push('ok', '已上传 ' + rel);
+  return { url: cdn, path: rel };
 }
 
 const routes = {
@@ -393,6 +442,16 @@ const routes = {
     commitPaths('post: 删除《' + p.name + '》（已移入 _trash）', [config.postsDir]);
     push('ok', '已移入 _trash：' + p.name);
     send(res, 200, { ok: true, state: gitState() });
+  },
+  'POST /api/upload': async (req, res) => {
+    const input = await readBody(req);
+    if (!input.data) return send(res, 400, { error: '缺少图片数据' });
+    try {
+      const r = await uploadImage(String(input.name || 'image.png'), String(input.data));
+      send(res, 200, { ok: true, url: r.url, path: r.path });
+    } catch (e) {
+      send(res, 500, { error: e.message });
+    }
   },
   'POST /api/render': async (req, res) => {
     const input = await readBody(req);

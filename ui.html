@@ -121,6 +121,7 @@ footer{flex:0 0 auto;height:150px;border-top:1px solid var(--line);background:va
       <span class="spacer"></span>
       <span class="muted" id="autosave"></span>
       <span class="muted" id="counter"></span>
+      <button id="btnImage">插入图片</button>
       <button id="btnMeta">元信息</button>
       <button id="btnSave">保存</button>
       <button id="btnDelete" class="danger">删除</button>
@@ -131,7 +132,12 @@ footer{flex:0 0 auto;height:150px;border-top:1px solid var(--line);background:va
       <div class="field"><label>标签（逗号分隔）</label><input id="mTags"></div>
       <div class="field"><label>分类</label><input id="mCats"></div>
       <div class="field full"><label>描述</label><input id="mDesc"></div>
-      <div class="field full"><label>封面 URL</label><input id="mCover"></div>
+      <div class="field full"><label>封面 URL</label>
+        <div style="display:flex;gap:8px">
+          <input id="mCover" style="flex:1">
+          <button type="button" id="btnCover" style="white-space:nowrap">上传封面</button>
+        </div>
+      </div>
     </div>
     <div class="panes">
       <textarea id="content" spellcheck="false" placeholder="从左栏选择一篇文章，或点右上角「新建文章」"></textarea>
@@ -167,6 +173,7 @@ footer{flex:0 0 auto;height:150px;border-top:1px solid var(--line);background:va
 </div>
 
 <div id="toast" class="hidden"></div>
+<input type="file" id="filePicker" accept="image/*" multiple style="display:none">
 <script>
 var state = { file: null, dirty: false, posts: [], lastSeq: 0, previewing: false, publishing: false, config: {}, autoTimer: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -370,6 +377,66 @@ $('btnPreview').onclick = function () {
     postJSON('/api/preview', {}).then(function (j) { if (!j.ok) toast('预览启动失败，查看日志', 'err'); poll(); })
       .catch(function () { toast('预览启动失败', 'err'); });
   }
+};
+
+var uploadMode = 'insert';
+
+function toBase64(file) {
+  return new Promise(function (resolve, reject) {
+    var r = new FileReader();
+    r.onload = function () { resolve(String(r.result).split(',')[1]); };
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+function insertAtCursor(text) {
+  var el = $('content');
+  var s = el.selectionStart || 0;
+  var e = el.selectionEnd || 0;
+  el.value = el.value.slice(0, s) + text + el.value.slice(e);
+  el.selectionStart = el.selectionEnd = s + text.length;
+  el.dispatchEvent(new Event('input'));
+}
+
+async function uploadFiles(files) {
+  for (var i = 0; i < files.length; i += 1) {
+    var f = files[i];
+    try {
+      toast('正在上传 ' + f.name + ' …');
+      var b64 = await toBase64(f);
+      var j = await api('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: f.name, data: b64 })
+      });
+      if (uploadMode === 'cover') {
+        $('mCover').value = j.url;
+        $('mCover').dispatchEvent(new Event('change', { bubbles: true }));
+        toast('封面已更新', 'ok');
+      } else {
+        var alt = f.name.replace(/\.[^.]+$/, '');
+        insertAtCursor('![' + alt + '](' + j.url + ')\n');
+        toast('已插入 ' + f.name, 'ok');
+      }
+    } catch (err) {
+      toast('上传失败：' + err.message, 'err');
+    }
+  }
+}
+
+$('btnImage').onclick = function () {
+  uploadMode = 'insert';
+  $('filePicker').click();
+};
+$('btnCover').onclick = function () {
+  uploadMode = 'cover';
+  $('filePicker').click();
+};
+$('filePicker').onchange = function (e) {
+  var files = [].slice.call(e.target.files);
+  e.target.value = '';
+  if (files.length) uploadFiles(files);
 };
 
 $('btnNew').onclick = function () {
