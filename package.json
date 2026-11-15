@@ -1,6 +1,6 @@
 {
   "name": "hexo-blog-console",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "description": "本地可视化的 Hexo 博客写作与一键发布控制台 / A local GUI console for writing, previewing and publishing a Hexo blog",
   "main": "server.js",
   "bin": {

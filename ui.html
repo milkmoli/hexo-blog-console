@@ -196,8 +196,10 @@ input.f:focus{border-color:var(--faint)}
       <div><div class="name">博客控制台</div><div class="sub">Hexo Blog Console</div></div>
     </div>
     <button class="nav on" data-page="posts"><svg class="i"><use href="#i-file"/></svg>文章</button>
+    <button class="nav" data-page="pages"><svg class="i"><use href="#i-file"/></svg>页面</button>
     <button class="nav" data-page="media"><svg class="i"><use href="#i-image"/></svg>图库</button>
     <button class="nav" data-page="deploy"><svg class="i"><use href="#i-upload"/></svg>部署</button>
+    <button class="nav" data-page="settings"><svg class="i"><use href="#i-sliders"/></svg>设置</button>
     <div class="rail-sep"></div>
     <div class="rail-foot">
       <button class="nav" id="btnTheme"><svg class="i" id="themeIcon"><use href="#i-moon"/></svg><span id="themeText">深色</span></button>
@@ -249,6 +251,49 @@ input.f:focus{border-color:var(--faint)}
             <div class="preview hidden" id="previewPane"><div class="markdown-body" id="previewBody"></div></div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section class="page hidden" id="pagePages">
+      <div class="split">
+        <div class="card list-card">
+          <div class="card-h" style="padding:10px 12px"><svg class="i"><use href="#i-file"/></svg>独立页面</div>
+          <div class="posts" id="pageList"></div>
+        </div>
+        <div class="card editor">
+          <div class="ed-bar">
+            <span class="file" id="pageCurrent">未选择页面</span>
+            <span class="sub" id="pageInfo"></span>
+            <span class="grow"></span>
+            <span class="sub" id="pageCounter"></span>
+            <button class="btn sm" id="btnPageSave"><svg class="i"><use href="#i-save"/></svg>保存</button>
+          </div>
+          <div class="panes"><textarea id="pageContent" spellcheck="false" placeholder="选择左侧页面"></textarea></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page hidden" id="pageSettings">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
+        <div class="card">
+          <div class="card-h"><svg class="i"><use href="#i-sliders"/></svg>侧边栏链接</div>
+          <div class="card-b" id="sideLinks"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><svg class="i"><use href="#i-sliders"/></svg>顶栏链接</div>
+          <div class="card-b" id="navLinks"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div class="card-h"><svg class="i"><use href="#i-file"/></svg>文案</div>
+        <div class="card-b">
+          <div class="field"><label class="f">侧边栏公告（留空则不显示）</label><input class="f" id="setAnnouncement" placeholder="一句话介绍，支持 HTML"></div>
+          <div class="field" style="margin-bottom:0"><label class="f">页脚文字（留空则不显示）</label><input class="f" id="setFooter" placeholder="例如：© 2026 milkmoli"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;align-items:center">
+        <button class="btn primary" id="btnSettingsSave"><svg class="i"><use href="#i-save"/></svg>保存设置</button>
+        <span class="sub" style="font-size:11.5px;color:var(--faint)">保存后需在「部署」页发布才会生效；改动写入主题 _config.yml</span>
       </div>
     </section>
 
@@ -352,7 +397,9 @@ function setPage(page) {
   $('pagePosts').classList.toggle('hidden', page !== 'posts');
   $('pageMedia').classList.toggle('hidden', page !== 'media');
   $('pageDeploy').classList.toggle('hidden', page !== 'deploy');
-  $('pageTitle').textContent = { posts:'文章', media:'图库', deploy:'部署' }[page] || '';
+  $('pagePages').classList.toggle('hidden', page !== 'pages');
+  $('pageSettings').classList.toggle('hidden', page !== 'settings');
+  $('pageTitle').textContent = { posts:'文章', pages:'页面', media:'图库', deploy:'部署', settings:'设置' }[page] || '';
   if (page === 'posts') {
     $('pageSub').textContent = '共 ' + state.posts.length + ' 篇';
     $('headActions').innerHTML = '<button class="btn primary" id="btnNew"><svg class="i"><use href="#i-plus"/></svg>新建文章</button>';
@@ -365,6 +412,15 @@ function setPage(page) {
     $('btnUpload2').onclick = function () { uploadMode = 'media'; $('filePicker').click(); };
     if (!state.images.length) loadImages();
     renderFolders(); renderMedia();
+  } else if (page === 'pages') {
+    $('pageSub').textContent = '关于、友链等独立页面';
+    $('headActions').innerHTML = '';
+    if (!state.pages || !state.pages.length) loadPages(); else renderPages();
+  } else if (page === 'settings') {
+    $('pageSub').textContent = '侧边栏、顶栏与文案';
+    $('headActions').innerHTML = '<button class="btn" id="btnSettingsReload"><svg class="i"><use href="#i-refresh"/></svg>重新读取</button>';
+    $('btnSettingsReload').onclick = loadSettings;
+    loadSettings();
   } else {
     $('pageSub').textContent = '构建并发布到 GitHub Pages';
     $('headActions').innerHTML = '<button class="btn" id="btnPreview"><svg class="i" id="prevIcon"><use href="#i-play"/></svg><span id="prevText">本地预览</span></button><button class="btn primary" id="btnPublish"><svg class="i"><use href="#i-upload"/></svg>发布上线</button>';
@@ -411,6 +467,106 @@ function save(opts) {
     toast(c && c.hash ? '已保存并提交 ' + c.hash : (c && c.reason === 'no-repo' ? '已保存（未纳入 git）' : '已保存'), 'ok');
     loadPosts(); return j;
   }).catch(function (e) { toast('保存失败：' + e.message, 'err'); });
+}
+
+/* 页面管理 */
+function loadPages() {
+  return api('/api/pages').then(function (j) {
+    state.pages = j.pages;
+    renderPages();
+  }).catch(function (e) { toast('页面读取失败：' + e.message, 'err'); });
+}
+
+function renderPages() {
+  var box = $('pageList');
+  box.innerHTML = '';
+  (state.pages || []).forEach(function (pg) {
+    var e = el('div', 'post' + (pg.path === state.pageFile ? ' on' : ''));
+    e.innerHTML = '<div class="dot"></div><div class="body"><div class="t">' + esc(pg.title) + '</div>' +
+      '<div class="m"><span>' + esc(pg.type || '页面') + '</span><span>' + pg.chars + ' 字</span></div></div>';
+    e.onclick = function () { openPage(pg); };
+    box.appendChild(e);
+  });
+  if (!(state.pages || []).length) {
+    var e2 = el('div', '', '没有独立页面');
+    e2.style.cssText = 'padding:20px;color:var(--faint);font-size:12px;text-align:center';
+    box.appendChild(e2);
+  }
+}
+
+function openPage(pg) {
+  api('/api/page?path=' + encodeURIComponent(pg.path)).then(function (j) {
+    state.pageFile = pg.path;
+    $('pageContent').value = j.content;
+    $('pageCurrent').textContent = pg.path;
+    $('pageInfo').textContent = pg.type || '';
+    $('pageCounter').textContent = j.content.replace(/\s/g, '').length + ' 字';
+    renderPages();
+  }).catch(function (e) { toast('打开失败：' + e.message, 'err'); });
+}
+
+/* 设置 */
+function linkRows(obj) {
+  var out = {};
+  Object.keys(obj || {}).forEach(function (k) { out[k] = { path: obj[k].path || '', icon: obj[k].icon || '' }; });
+  return out;
+}
+
+function renderLinkEditor(containerId, obj) {
+  var box = $(containerId);
+  box.innerHTML = '';
+  var wrap = el('div');
+  Object.keys(obj).forEach(function (name) {
+    var row = el('div', '');
+    row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px';
+    row.innerHTML = '<input class="f" data-k="name" value="' + esc(name) + '" placeholder="名称" style="width:86px">' +
+      '<input class="f" data-k="path" value="' + esc(obj[name].path) + '" placeholder="/path" style="flex:1">' +
+      '<input class="f" data-k="icon" value="' + esc(obj[name].icon) + '" placeholder="fa-regular fa-link" style="width:150px">';
+    var del = el('button', 'btn sm icon', '<svg class="i"><use href="#i-trash"/></svg>');
+    del.onclick = function () { row.remove(); };
+    row.appendChild(del);
+    wrap.appendChild(row);
+  });
+  var add = el('button', 'btn sm', '<svg class="i"><use href="#i-plus"/></svg>添加链接');
+  add.style.marginTop = '4px';
+  add.onclick = function () {
+    var row = el('div', '');
+    row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px';
+    row.innerHTML = '<input class="f" data-k="name" placeholder="名称" style="width:86px">' +
+      '<input class="f" data-k="path" placeholder="/path" style="flex:1">' +
+      '<input class="f" data-k="icon" placeholder="fa-regular fa-link" style="width:150px">';
+    var d = el('button', 'btn sm icon', '<svg class="i"><use href="#i-trash"/></svg>');
+    d.onclick = function () { row.remove(); };
+    row.appendChild(d);
+    wrap.insertBefore(row, add);
+  };
+  wrap.appendChild(add);
+  box.appendChild(wrap);
+}
+
+function collectLinks(containerId) {
+  var out = {};
+  [].slice.call($(containerId).querySelectorAll('input[data-k="name"]')).forEach(function (nameInput) {
+    var row = nameInput.parentElement;
+    var name = nameInput.value.trim();
+    if (!name) return;
+    out[name] = {
+      path: row.querySelector('input[data-k="path"]').value.trim(),
+      icon: row.querySelector('input[data-k="icon"]').value.trim()
+    };
+  });
+  return out;
+}
+
+function loadSettings() {
+  return api('/api/settings').then(function (s) {
+    state.settings = s;
+    renderLinkEditor('sideLinks', s.sidebarLinks || {});
+    renderLinkEditor('navLinks', s.navbarLinks || {});
+    $('setAnnouncement').value = s.announcement || '';
+    $('setFooter').value = s.footer || '';
+    return s;
+  }).catch(function (e) { toast('设置读取失败：' + e.message, 'err'); });
 }
 
 /* 图库 */
@@ -625,6 +781,24 @@ $('btnMediaLayout').onclick = function () {
   renderMedia();
 };
 $('btnClearLog').onclick = function () { $('log').innerHTML = ''; };
+$('btnPageSave').onclick = function () {
+  if (!state.pageFile) return toast('先选择一个页面', 'err');
+  postJSON('/api/page/save', { path: state.pageFile, content: $('pageContent').value })
+    .then(function () { toast('页面已保存', 'ok'); loadPages(); })
+    .catch(function (e) { toast('保存失败：' + e.message, 'err'); });
+};
+
+$('btnSettingsSave').onclick = function () {
+  postJSON('/api/settings', {
+    sidebarLinks: collectLinks('sideLinks'),
+    navbarLinks: collectLinks('navLinks'),
+    announcement: $('setAnnouncement').value,
+    footer: $('setFooter').value
+  }).then(function () {
+    toast('设置已保存，去「部署」页发布后生效', 'ok');
+  }).catch(function (e) { toast('保存失败：' + e.message, 'err'); });
+};
+
 $('btnSave').onclick = function () { save(); };
 $('btnMeta').onclick = function () { $('metaPanel').classList.toggle('hidden'); };
 $('btnTogglePreview').onclick = function () { var p = $('previewPane'); p.classList.toggle('hidden'); if (!p.classList.contains('hidden')) renderPreview(); };

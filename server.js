@@ -28,7 +28,8 @@ function loadConfig() {
     imageDir: 'blog',
     imageCdn: 'https://cdn.jsdelivr.net/gh/{repo}@{branch}/{path}',
     thumbCdn: 'https://images.weserv.nl/?url={url}&w=420&h=315&fit=cover&output=webp&q=72',
-    githubToken: ''
+    githubToken: '',
+    themeConfig: 'node_modules/hexo-theme-redefine/_config.yml'
   };
   let user = {};
   if (fs.existsSync(CONFIG_PATH)) {
@@ -404,6 +405,104 @@ async function deleteImage(rel) {
   return true;
 }
 
+/* ---------- 页面（source 下的独立 md）---------- */
+function pagePath(rel) {
+  var clean = String(rel || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!/^[^/]+(\/[^/]+)*\/index\.md$/.test(clean)) throw new Error('页面路径不合法');
+  if (clean.indexOf('_posts/') === 0) throw new Error('这是文章，不是页面');
+  return path.join(BLOG, 'source', clean);
+}
+
+function listPages() {
+  var base = path.join(BLOG, 'source');
+  var out = [];
+  (function walk(dir, prefix) {
+    var entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries.forEach(function (e) {
+      if (e.name === '_posts' || e.name === 'js' || e.name.startsWith('.')) return;
+      var full = path.join(dir, e.name);
+      var rel = prefix ? prefix + '/' + e.name : e.name;
+      if (e.isDirectory()) walk(full, rel);
+      else if (e.name === 'index.md') {
+        var text = fs.readFileSync(full, 'utf8');
+        var fm = parseFrontMatter(text);
+        out.push({
+          path: rel,
+          title: fm.data.title || rel.replace('/index.md', ''),
+          type: fm.data.type || fm.data.layout || '',
+          chars: fm.body.replace(/\s/g, '').length
+        });
+      }
+    });
+  })(base, '');
+  return out.sort(function (a, b) { return a.path.localeCompare(b.path); });
+}
+
+/* ---------- 设置（主题 _config.yml）---------- */
+function themeConfigPath() { return path.join(BLOG, config.themeConfig); }
+
+function loadThemeConfig() {
+  var yaml = require(path.join(BLOG, 'node_modules', 'js-yaml'));
+  var file = themeConfigPath();
+  var text = fs.readFileSync(file, 'utf8');
+  return { yaml: yaml, text: text, data: yaml.load(text) };
+}
+
+function dumpString(v) {
+  var s = String(v == null ? '' : v);
+  return JSON.stringify(s);
+}
+
+function dumpLinks(links, indent) {
+  var pad = ' '.repeat(indent);
+  var out = pad + 'links:\n';
+  Object.keys(links).forEach(function (k) {
+    var item = links[k] || {};
+    out += pad + '  ' + k + ':\n';
+    out += pad + '    path: ' + dumpString(item.path || '/') + '\n';
+    if (item.icon) out += pad + '    icon: ' + dumpString(item.icon) + '\n';
+  });
+  return out.replace(/\n$/, '');
+}
+
+function replaceKeyBlock(text, keys, blockText) {
+  var lines = text.split('\n');
+  var from = 0, parentIndent = -1, startIdx = -1, keyIndent = -1;
+  for (var k = 0; k < keys.length; k++) {
+    var key = keys[k];
+    var found = -1, foundIndent = -1;
+    for (var i = from; i < lines.length; i++) {
+      var m = /^(\s*)([^\s#][^:]*?):(\s|$)/.exec(lines[i]);
+      if (!m) continue;
+      var ind = m[1].length;
+      if (k === 0 && ind !== 0) continue;
+      if (k > 0 && ind <= parentIndent) break;
+      if (m[2] === key) { found = i; foundIndent = ind; break; }
+    }
+    if (found < 0) return null;
+    from = found + 1; parentIndent = foundIndent; startIdx = found; keyIndent = foundIndent;
+  }
+  var endIdx = lines.length;
+  for (var j = startIdx + 1; j < lines.length; j++) {
+    var line = lines[j];
+    if (!line.trim()) continue;
+    var ind2 = line.match(/^\s*/)[0].length;
+    if (ind2 <= keyIndent) { endIdx = j; break; }
+  }
+  var before = lines.slice(0, startIdx).join('\n');
+  var after = lines.slice(endIdx).join('\n');
+  return before + (before ? '\n' : '') + blockText + '\n' + after;
+}
+
+function normalizeLinks(obj) {
+  var out = {};
+  Object.keys(obj || {}).forEach(function (k) {
+    var v = obj[k] || {};
+    if (v.path) out[k] = { path: String(v.path), icon: v.icon ? String(v.icon) : '' };
+  });
+  return out;
+}
+
 const routes = {
   'GET /api/health': (req, res) => send(res, 200, { ok: true }),
   'GET /api/config': (req, res) => send(res, 200, { blogDir: BLOG, siteUrl: config.siteUrl, previewPort: config.previewPort, autoSaveMs: config.autoSaveMs, defaultCover: config.defaultCover }),
@@ -513,6 +612,88 @@ const routes = {
     } catch (e) {
       send(res, 500, { error: e.message });
     }
+  },
+  'GET /api/pages': (req, res) => {
+    try { send(res, 200, { pages: listPages() }); }
+    catch (e) { send(res, 500, { error: e.message }); }
+  },
+  'GET /api/page': (req, res, url) => {
+    try {
+      var p = pagePath(url.searchParams.get('path'));
+      if (!fs.existsSync(p)) return send(res, 404, { error: '页面不存在' });
+      send(res, 200, { path: url.searchParams.get('path'), content: fs.readFileSync(p, 'utf8') });
+    } catch (e) { send(res, 400, { error: e.message }); }
+  },
+  'POST /api/page/save': async (req, res) => {
+    const input = await readBody(req);
+    try {
+      var rel = String(input.path || '');
+      var p = pagePath(rel);
+      if (fs.existsSync(p)) fs.copyFileSync(p, p + '.bak');
+      fs.writeFileSync(p, String(input.content || ''), 'utf8');
+      var commit = commitPaths('page: 更新 ' + rel, [path.join('source', rel)]);
+      push('ok', '页面已保存 ' + rel);
+      send(res, 200, { ok: true, git: commit });
+    } catch (e) { send(res, 400, { error: e.message }); }
+  },
+  'GET /api/settings': (req, res) => {
+    try {
+      var loaded = loadThemeConfig();
+      var data = loaded.data || {};
+      var nav = (data.navbar && data.navbar.links) || {};
+      var side = (data.home && data.home.sidebar) || {};
+      send(res, 200, {
+        navbarLinks: nav,
+        sidebarLinks: side.links || {},
+        announcement: side.announcement || '',
+        footer: (data.footer && data.footer.customize) || '',
+        file: config.themeConfig
+      });
+    } catch (e) { send(res, 500, { error: e.message }); }
+  },
+  'POST /api/settings': async (req, res) => {
+    const input = await readBody(req);
+    try {
+      var loaded = loadThemeConfig();
+      var text = loaded.text;
+      var yaml = loaded.yaml;
+
+      if (input.navbarLinks) {
+        var block = dumpLinks(normalizeLinks(input.navbarLinks), 2);
+        text = replaceKeyBlock(text, ['navbar', 'links'], block);
+        if (!text) throw new Error('找不到 navbar.links 配置块');
+      }
+      if (input.sidebarLinks) {
+        var block2 = dumpLinks(normalizeLinks(input.sidebarLinks), 4);
+        text = replaceKeyBlock(text, ['home', 'sidebar', 'links'], block2);
+        if (!text) throw new Error('找不到 home.sidebar.links 配置块');
+      }
+      if (typeof input.announcement === 'string') {
+        var ann = input.announcement.trim();
+        var line = '    announcement: ' + (ann ? dumpString(ann) : '') + ' # Announcement text';
+        text = text.replace(/^\s*announcement:.*$/m, line);
+      }
+      if (typeof input.footer === 'string') {
+        var f = input.footer.trim();
+        text = text.replace(/^(\s*customize:).*$/m, '$1' + (f ? ' ' + dumpString(f) : ''));
+      }
+
+      // 校验：必须能解析，且三个值写进去了
+      var parsed = yaml.load(text);
+      if (!parsed || !parsed.navbar || !parsed.home) throw new Error('生成结果无法解析，已放弃写入');
+      if (input.navbarLinks && !parsed.navbar.links) throw new Error('顶栏链接写入失败');
+      if (input.sidebarLinks && !(parsed.home.sidebar && parsed.home.sidebar.links)) throw new Error('侧栏链接写入失败');
+
+      var file = themeConfigPath();
+      fs.copyFileSync(file, file + '.bak');
+      fs.writeFileSync(file, text, 'utf8');
+      // 主题配置在 node_modules 里不进 git，同步一份到仓库根目录并提交
+      var backup = path.join(BLOG, 'theme-config.yml');
+      fs.copyFileSync(file, backup);
+      var commit = commitPaths('config: 更新主题配置', ['theme-config.yml']);
+      push('ok', '主题配置已更新');
+      send(res, 200, { ok: true, git: commit });
+    } catch (e) { send(res, 500, { error: e.message }); }
   },
   'POST /api/upload': async (req, res) => {
     const input = await readBody(req);
