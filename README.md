@@ -29,6 +29,8 @@
 - **图片上传**：一键把封面或正文配图传到 GitHub 图床仓库，自动生成 jsDelivr 链接并插入 Markdown
 - **图库**：浏览图床仓库里的全部图片，按文件夹筛选、搜索、复制 Markdown/链接、删除；默认列表视图，可切换到缩略图
 - **看图**：大图预览支持点击背景关闭、← → 切换上一张/下一张、ESC 关闭
+- **缩略图**：网格模式经缩放服务取小图（默认 420×315 WebP），队列加载（5 并发）、失败自动回退原图
+- **界面**：自定义细滚动条，随深色/浅色主题切换
 - **桌面软件式布局**：左侧图标导航（文章 / 图库 / 部署），矢量图标，深色与浅色主题
 
 ## 环境要求
@@ -90,6 +92,7 @@ cp config.example.json config.json
 | `imageBranch` | `main` | 图床仓库分支 |
 | `imageDir` | `blog` | 图片存放的子目录（会自动按 年/月 分级） |
 | `imageCdn` | jsDelivr 模板 | CDN 地址模板，支持 `{repo}` `{branch}` `{path}` |
+| `thumbCdn` | weserv 模板 | 缩略图缩放服务模板，`{url}` 为原图地址（编码后）；留空则直接用原图 |
 | `githubToken` | `''` | GitHub Token（不填则读 `~/.git-credentials` 或环境变量 `GITHUB_TOKEN`）|
 
 ## 快捷键

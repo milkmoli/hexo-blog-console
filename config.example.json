@@ -6,5 +6,6 @@
   "postsDir": "source/_posts",
   "hexoBin": "node_modules/hexo-cli/bin/hexo",
   "previewPort": 4000,
-  "autoSaveMs": 4000
+  "autoSaveMs": 4000,
+  "thumbCdn": "https://images.weserv.nl/?url={url}&w=420&h=315&fit=cover&output=webp&q=72"
 }

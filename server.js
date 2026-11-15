@@ -27,6 +27,7 @@ function loadConfig() {
     imageBranch: 'main',
     imageDir: 'blog',
     imageCdn: 'https://cdn.jsdelivr.net/gh/{repo}@{branch}/{path}',
+    thumbCdn: 'https://images.weserv.nl/?url={url}&w=420&h=315&fit=cover&output=webp&q=72',
     githubToken: ''
   };
   let user = {};
@@ -373,7 +374,11 @@ async function listImages(force) {
       return n.type === 'blob' && /\.(png|jpe?g|gif|webp|svg)$/i.test(n.path);
     })
     .map(function (n) {
-      return { path: n.path, size: n.size || 0, url: cdnUrl(n.path), name: n.path.split('/').pop() };
+      var full = cdnUrl(n.path);
+      var thumb = config.thumbCdn
+        ? config.thumbCdn.replace('{url}', encodeURIComponent(full)).replace('{raw}', full)
+        : full;
+      return { path: n.path, size: n.size || 0, url: full, thumb: thumb, name: n.path.split('/').pop() };
     })
     .sort(function (a, b) { return a.path < b.path ? 1 : -1; });
   imageCache = { at: Date.now(), items: items };

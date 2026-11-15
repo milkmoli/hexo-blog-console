@@ -40,6 +40,15 @@ html[data-theme="light"]{
   --text:#1b2028; --muted:#6b7280; --faint:#98a0ad; --accent:#a3233a; --code:#f5f6f8;
 }
 *{box-sizing:border-box}
+*{scrollbar-width:thin;scrollbar-color:#2c3542 transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#2c3542;border-radius:6px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:#3b4657;background-clip:content-box}
+::-webkit-scrollbar-corner{background:transparent}
+html[data-theme="light"] *{scrollbar-color:#cdd4de transparent}
+html[data-theme="light"] ::-webkit-scrollbar-thumb{background:#cdd4de;background-clip:content-box}
+html[data-theme="light"] ::-webkit-scrollbar-thumb:hover{background:#b7c0cc;background-clip:content-box}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--text);font:13px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}
 svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
@@ -441,18 +450,32 @@ function renderMedia() {
     box.appendChild(wrap);
   } else {
     var grid = el('div', 'grid');
+    tileMap = {};
+    if (gridObserver) { gridObserver.disconnect(); gridObserver = null; }
+    gridObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var t = en.target;
+        if (t.getAttribute('data-queued') === '1') return;
+        t.setAttribute('data-queued', '1');
+        enqueueThumb(t._job);
+        gridObserver.unobserve(t);
+      });
+    }, { root: $('mediaBody'), rootMargin: '240px' });
+
     list.forEach(function (it) {
       var t = el('div', 'tile');
-      var ph = el('div', 'ph', '载入中');
+      var ph = el('div', 'ph', '等待加载');
       var img = document.createElement('img');
-      img.alt = it.name; img.loading = 'lazy'; img.style.display = 'none';
-      img.onload = function () { ph.style.display = 'none'; img.style.display = 'block'; };
-      img.onerror = function () { ph.textContent = '无法预览'; };
-      img.src = it.url;
+      img.alt = it.name; img.style.display = 'none';
       var cap = el('div', 'cap', esc(it.name) + '<br><span>' + fmtSize(it.size) + '</span>');
       t.appendChild(ph); t.appendChild(img); t.appendChild(cap);
       t.onclick = function () { openImage(it); };
+      var job = { url: it.thumb || it.url, fallback: it.url, img: img, ph: ph, path: it.path, retried: false };
+      t._job = job;
+      tileMap[it.path] = job;
       grid.appendChild(t);
+      gridObserver.observe(t);
     });
     box.appendChild(grid);
   }
@@ -463,6 +486,54 @@ function currentMediaList() {
     return (!state.mediaFolder || folderOf(x.path) === state.mediaFolder) && (!q || x.name.toLowerCase().indexOf(q) >= 0);
   });
 }
+var tileMap = {};
+var gridObserver = null;
+var thumbQueue = [];
+var thumbActive = 0;
+var THUMB_MAX = 5;
+
+function altCdn(url) {
+  if (url.indexOf('cdn.jsdelivr.net') >= 0) return url.replace('cdn.jsdelivr.net', 'fastly.jsdelivr.net');
+  return url;
+}
+
+function enqueueThumb(job) {
+  if (!job) return;
+  thumbQueue.push(job);
+  pumpThumbs();
+}
+
+function pumpThumbs() {
+  while (thumbActive < THUMB_MAX && thumbQueue.length) {
+    startThumb(thumbQueue.shift());
+  }
+}
+
+function startThumb(job) {
+  thumbActive += 1;
+  var img = job.img;
+  job.ph.textContent = '载入中';
+  job.ph.style.display = 'flex';
+  img.onload = function () {
+    thumbActive -= 1;
+    job.ph.style.display = 'none';
+    img.style.display = 'block';
+    job.loaded = true;
+    pumpThumbs();
+  };
+  img.onerror = function () {
+    if (!job.retried) {
+      job.retried = true;
+      img.src = job.fallback || altCdn(job.url);
+      return;
+    }
+    thumbActive -= 1;
+    job.ph.textContent = '无法预览';
+    pumpThumbs();
+  };
+  img.src = job.url;
+}
+
 function openImage(it) {
   var list = currentMediaList();
   state.mmIndex = list.findIndex(function (x) { return x.path === it.path; });
@@ -473,7 +544,16 @@ function openImage(it) {
   var ld = $('mmLoad');
   ld.style.display = 'flex';
   ld.textContent = '载入中';
-  $('mmImg').onload = function () { ld.style.display = 'none'; };
+  $('mmImg').onload = function () {
+    ld.style.display = 'none';
+    var job = tileMap[it.path];
+    if (job && !job.loaded) {
+      job.loaded = true;
+      job.ph.style.display = 'none';
+      job.img.src = job.url || it.url;
+      job.img.style.display = 'block';
+    }
+  };
   $('mmImg').onerror = function () { ld.textContent = '无法预览这张图'; };
   $('mmImg').src = it.url;
   $('mediaModal').classList.remove('hidden');
