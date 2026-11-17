@@ -731,9 +731,14 @@ async function uploadFiles(files) {
       toast('正在上传 ' + f.name);
       var b64 = await toBase64(f);
       var j = await postJSON('/api/upload', { name: f.name, data: b64 });
-      if (uploadMode === 'cover') { $('mCover').value = j.url; $('mCover').dispatchEvent(new Event('change', { bubbles:true })); toast('封面已更新', 'ok'); }
-      else if (uploadMode === 'media') { toast('已上传', 'ok'); }
-      else { insertAtCursor('![' + f.name.replace(/\.[^.]+$/, '') + '](' + j.url + ')\n'); toast('已插入 ' + f.name, 'ok'); }
+      var saved = '';
+      if (j.compress && j.compress.before > j.compress.after) {
+        var kb = function (n) { return Math.round(n / 1024) + 'KB'; };
+        saved = '（压缩 ' + kb(j.compress.before) + ' → ' + kb(j.compress.after) + '）';
+      }
+      if (uploadMode === 'cover') { $('mCover').value = j.url; $('mCover').dispatchEvent(new Event('change', { bubbles:true })); toast('封面已更新' + saved, 'ok'); }
+      else if (uploadMode === 'media') { toast('已上传' + saved, 'ok'); }
+      else { insertAtCursor('![' + f.name.replace(/\.[^.]+$/, '') + '](' + j.url + ')\n'); toast('已插入 ' + f.name + saved, 'ok'); }
     } catch (e) { toast('上传失败：' + e.message, 'err'); }
   }
   if (uploadMode === 'media') loadImages(true);

@@ -25,5 +25,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/milkmoli/hexo-blog-console.git"
+  },
+  "dependencies": {
+    "sharp": "^0.35.5"
   }
 }

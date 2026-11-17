@@ -27,6 +27,7 @@ function loadConfig() {
     imageBranch: 'main',
     imageDir: 'blog',
     imageCdn: 'https://cdn.jsdelivr.net/gh/{repo}@{branch}/{path}',
+    imageCompress: { enable: true, maxWidth: 2400, quality: 82 },
     thumbCdn: 'https://images.weserv.nl/?url={url}&w=420&h=315&fit=cover&output=webp&q=72',
     githubToken: '',
     themeConfig: 'node_modules/hexo-theme-redefine/_config.yml'
@@ -225,11 +226,24 @@ function send(res, code, obj) {
   res.writeHead(code, { 'Content-Type': typeof obj === 'string' ? 'text/html; charset=utf-8' : 'application/json; charset=utf-8' });
   res.end(body);
 }
+const MAX_BODY = 60 * 1024 * 1024;
+
 function readBody(req) {
   return new Promise((resolve) => {
-    let data = '';
-    req.on('data', (c) => { data += c; if (data.length > 8e6) req.destroy(); });
-    req.on('end', () => { try { resolve(JSON.parse(data || '{}')); } catch (e) { resolve({}); } });
+    let chunks = [];
+    let size = 0;
+    let tooBig = false;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > MAX_BODY) { tooBig = true; return; }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (tooBig) return resolve({ __tooBig: true });
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); }
+      catch (e) { resolve({}); }
+    });
+    req.on('error', () => resolve({}));
   });
 }
 function postPath(file) {
@@ -327,11 +341,60 @@ function githubToken() {
   return '';
 }
 
+let sharpLib = null;
+function getSharp() {
+  if (sharpLib === null) {
+    try { sharpLib = require('sharp'); } catch (e) { sharpLib = false; }
+  }
+  return sharpLib;
+}
+
+/* 上传前压缩：限制最大宽度 + 按格式重新编码，尽量不掉画质 */
+async function compressImage(buffer, ext) {
+  var cfg = config.imageCompress || {};
+  if (cfg.enable === false) return { buffer: buffer, info: null };
+  if (['gif', 'svg'].indexOf(ext) >= 0) return { buffer: buffer, info: null };
+  var sharp = getSharp();
+  if (!sharp) return { buffer: buffer, info: null };
+
+  try {
+    var img = sharp(buffer, { failOn: 'none' }).rotate();
+    var meta = await img.metadata();
+    var maxWidth = cfg.maxWidth || 2400;
+    if (meta.width && meta.width > maxWidth) img = img.resize({ width: maxWidth, withoutEnlargement: true });
+    var quality = cfg.quality || 82;
+
+    if (ext === 'jpg' || ext === 'jpeg') img = img.jpeg({ quality: quality, mozjpeg: true, progressive: true });
+    else if (ext === 'png') img = img.png({ compressionLevel: 9, quality: quality, effort: 7 });
+    else if (ext === 'webp') img = img.webp({ quality: quality, effort: 5 });
+    else return { buffer: buffer, info: null };
+
+    var out = await img.toBuffer();
+    if (out.length >= buffer.length) return { buffer: buffer, info: null };
+    return {
+      buffer: out,
+      info: {
+        before: buffer.length,
+        after: out.length,
+        width: meta.width,
+        height: meta.height,
+        resized: !!(meta.width && meta.width > maxWidth)
+      }
+    };
+  } catch (e) {
+    push('warn', '压缩失败，按原图上传：' + e.message);
+    return { buffer: buffer, info: null };
+  }
+}
+
 async function uploadImage(name, base64) {
   const token = githubToken();
   if (!token) throw new Error('没有可用的 GitHub token（配置 githubToken 或登录过 git）');
   const ext = (path.extname(name) || '.png').toLowerCase().replace('.', '');
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].indexOf(ext) < 0) throw new Error('不支持的图片格式：' + ext);
+  const raw = Buffer.from(base64, 'base64');
+  const compressed = await compressImage(raw, ext);
+  const payload = compressed.buffer;
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const base = path.basename(name, path.extname(name)).replace(/[^\w\u4e00-\u9fa5-]+/g, '-').slice(0, 40) || 'image';
@@ -345,13 +408,16 @@ async function uploadImage(name, base64) {
       Accept: 'application/vnd.github+json',
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ message: 'upload: ' + rel, content: base64, branch: config.imageBranch || 'main' })
+    body: JSON.stringify({ message: 'upload: ' + rel, content: payload.toString('base64'), branch: config.imageBranch || 'main' })
   });
   if (!res.ok) throw new Error('GitHub 上传失败：' + res.status + ' ' + (await res.text()).slice(0, 160));
   const cdn = (config.imageCdn || '').replace('{repo}', config.imageRepo).replace('{branch}', config.imageBranch || 'main').replace('{path}', rel);
+  if (compressed.info) {
+    push('ok', '已压缩 ' + Math.round(compressed.info.before / 1024) + 'KB → ' + Math.round(compressed.info.after / 1024) + 'KB');
+  }
   push('ok', '已上传 ' + rel);
   imageCache.at = 0;
-  return { url: cdn, path: rel };
+  return { url: cdn, path: rel, compress: compressed.info };
 }
 
 function cdnUrl(rel) {
@@ -503,6 +569,16 @@ function normalizeLinks(obj) {
   return out;
 }
 
+function backupFile(full) {
+  try {
+    if (!fs.existsSync(full)) return;
+    var dir = path.join(BLOG, '_backups');
+    fs.mkdirSync(dir, { recursive: true });
+    var stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    fs.copyFileSync(full, path.join(dir, path.basename(full) + '.' + stamp + '.bak'));
+  } catch (e) { push('warn', '备份失败：' + e.message); }
+}
+
 const routes = {
   'GET /api/health': (req, res) => send(res, 200, { ok: true }),
   'GET /api/config': (req, res) => send(res, 200, { blogDir: BLOG, siteUrl: config.siteUrl, previewPort: config.previewPort, autoSaveMs: config.autoSaveMs, defaultCover: config.defaultCover }),
@@ -547,7 +623,7 @@ const routes = {
   'POST /api/save': async (req, res) => {
     const input = await readBody(req);
     const p = postPath(input.file);
-    if (fs.existsSync(p.full)) fs.copyFileSync(p.full, p.full + '.bak');
+    backupFile(p.full);
     fs.writeFileSync(p.full, String(input.content || ''), 'utf8');
     const commit = input.commit === false ? { ok: true, reason: 'skipped' } : commitPaths('post: 更新《' + p.name + '》', [path.join(config.postsDir, p.name)]);
     if (commit.hash) push('ok', '已保存并提交 ' + p.name);
@@ -567,7 +643,7 @@ const routes = {
       description: fields.description,
       cover: fields.cover
     });
-    fs.copyFileSync(p.full, p.full + '.bak');
+    backupFile(p.full);
     fs.writeFileSync(p.full, next, 'utf8');
     const commit = commitPaths('post: 修改《' + p.name + '》的元信息', [path.join(config.postsDir, p.name)]);
     send(res, 200, { ok: true, file: p.name, git: commit, content: next, state: gitState() });
@@ -629,7 +705,7 @@ const routes = {
     try {
       var rel = String(input.path || '');
       var p = pagePath(rel);
-      if (fs.existsSync(p)) fs.copyFileSync(p, p + '.bak');
+      backupFile(p);
       fs.writeFileSync(p, String(input.content || ''), 'utf8');
       var commit = commitPaths('page: 更新 ' + rel, [path.join('source', rel)]);
       push('ok', '页面已保存 ' + rel);
@@ -697,10 +773,11 @@ const routes = {
   },
   'POST /api/upload': async (req, res) => {
     const input = await readBody(req);
+    if (input.__tooBig) return send(res, 413, { error: '图片超过 45MB，请先压缩后再传' });
     if (!input.data) return send(res, 400, { error: '缺少图片数据' });
     try {
       const r = await uploadImage(String(input.name || 'image.png'), String(input.data));
-      send(res, 200, { ok: true, url: r.url, path: r.path });
+      send(res, 200, { ok: true, url: r.url, path: r.path, compress: r.compress });
     } catch (e) {
       send(res, 500, { error: e.message });
     }
